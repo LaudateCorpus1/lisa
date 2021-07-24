@@ -35,7 +35,7 @@ class dpdk(TestSuite):
         sriov_feature = node.features[Sriov]
         sriov_is_enabled = sriov_feature.enabled()
         self.log.info(f"Verify SRIOV is enabled: {sriov_is_enabled}")
-        assert_that(sriov_is_enabled).described_as(
+        assert_that(sriov_is_enabled).is_true().described_as(
             "SRIOV was not enabled for this test node."
         )
         # self._install_dpdk_dependencies(node)
@@ -131,7 +131,10 @@ class dpdk(TestSuite):
         self, node: Node, cmd: str, path: PurePath
     ) -> str:
         result = node.execute(cmd, sudo=True, cwd=path, shell=True)
-        result.assert_exit_code()
+        assert_that(result.exit_code).described_as(
+            f"{cmd} failed with code {result.exit_code} and stdout+stderr:"
+            + f"\n{result.stdout}\n=============\n{result.stderr}\n=============\n"
+        ).is_zero()
         self.log.info(result.stdout)  # TODO: debug
 
         return result.stdout
