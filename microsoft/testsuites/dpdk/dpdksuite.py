@@ -89,7 +89,7 @@ class dpdk(TestSuite):
         "https://github.com/ninja-build/ninja/releases/download/v1.10.2/ninja-linux.zip"
     )
 
-    _nic_attributes_regex = r"([a-zA-Z_]+),?"
+    _ip_addr_regex = r"[0-9]+:\s+([a-zA-Z0-9\-_]+):\s+<(?:[a-zA-Z0-9_]+,?)+>"
 
     def _install_dpdk_dependencies(self, node: Node) -> None:
         if isinstance(node.os, Ubuntu):
@@ -135,7 +135,7 @@ class dpdk(TestSuite):
             f"{cmd} failed with code {result.exit_code} and stdout+stderr:"
             + f"\n{result.stdout}\n=============\n{result.stderr}\n=============\n"
         ).is_zero()
-        self.log.info(result.stdout)  # TODO: debug
+        self.log.info(f"{cmd}:\n{result.stdout}")  # TODO: debug
 
         return result.stdout
 
@@ -199,6 +199,9 @@ class dpdk(TestSuite):
     def _get_primary_secondary_pairings(
         self, node: Node, nic_list: List[str]
     ) -> Dict[str, str]:
+        # Identify which nics are slaved to master devices.
+        # This should be really simple with /usr/bin/ip but experience shows
+        # some platforms are buggy and require another method
         master_nics = dict()
         result = node.execute(
             "echo 'export PATH=$PATH:/usr/sbin' >> ~/.bashrc", shell=True
@@ -207,18 +210,43 @@ class dpdk(TestSuite):
         result = node.execute("echo $PATH", shell=True)
         self.log.info(result.stdout)
 
+        # method 1
         for nic in nic_list:
-            ip_addr_output = self._execute_expect_zero(node, f"ip addr show {nic}")
-            attributes_search = re.search(self._nic_attributes_regex, ip_addr_output)
-            self.log.info(attributes_search.groups())
-            if attributes_search and "SLAVE" in attributes_search.groups():
-                # this following search doesn't seem to be portable for REDHAT
-                for master_nic in nic_list:
-                    if f"master {master_nic}" in ip_addr_output:
-                        assert_that(master_nic).is_not_equal_to(nic).described_as(
-                            "Slave NIC was found paired to itself, something went wrong."
+            self._execute_expect_zero(node, f"ip addr show {nic}")
+
+            ip_addr_output = self._execute_expect_zero(
+                node, f"ip link show master {nic}"
+            )
+            if ip_addr_output != "":
+                slave_nic_match = re.search(self._ip_addr_regex, ip_addr_output)
+                assert_that(slave_nic_match).is_not_none()
+                if slave_nic_match:
+                    assert_that(slave_nic_match.group(1)).is_not_equal_to("")
+                    secondary_nic_name = slave_nic_match.group(1)
+                    self.log.info(f"Found secondary nic named: {secondary_nic_name}")
+                    assert_that(secondary_nic_name in nic_list).is_true()
+                    master_nics[nic] = secondary_nic_name
+
+        self.log.info(master_nics)
+        if not master_nics:
+            # method 2 (rhel 7-RAW has trouble with the first one for some reason)
+            self.log.info(
+                "NIC Pairings weren't found with ip addr show master [nic]... attempting backup method"
+            )
+            for nic in nic_list:
+                for other_nic in nic_list:
+                    if other_nic is not nic:
+                        upper_check = node.execute(
+                            f"readlink /sys/class/net/{nic}/upper_{other_nic}"
                         )
-                        master_nics[master_nic] = nic
-                        break
+                        if upper_check.exit_code == 0:
+                            self.log.info(upper_check.stdout)
+                            assert_that(upper_check.stdout).is_not_equal_to("")
+                            if other_nic in master_nics:
+                                # if this is a duplicate find, assert the two methods found the same thing
+                                assert_that(master_nics[other_nic]).is_equal_to(nic)
+                            master_nics[other_nic] = nic
+
         self.log.info(f"found primary->secondary nic pairings:\n{master_nics}")
+        assert_that(master_nics).is_not_empty()
         return master_nics
