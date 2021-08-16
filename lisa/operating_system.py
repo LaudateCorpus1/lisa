@@ -306,6 +306,9 @@ class Posix(OperatingSystem, BaseClassMixin):
     def replace_boot_kernel(self, kernel_version: str) -> None:
         raise NotImplementedError("update boot entry is not implemented")
 
+    def config_kenel_cmdline(self, original: str, replaced: str) -> None:
+        raise NotImplementedError()
+
     def install_packages(
         self,
         packages: Union[str, Tool, Type[Tool], List[Union[str, Tool, Type[Tool]]]],
@@ -493,6 +496,22 @@ class Debian(Linux):
 
         if timeout < timer.elapsed():
             raise Exception("timeout to wait previous dpkg process stop.")
+
+    def config_kenel_cmdline(self, original: str, replaced: str) -> None:
+        # After config kernel cmdline, system reboot is needed
+        cmdline_config_file = "/etc/default/grub"
+
+        sed = self._node.tools[Sed]
+        sed.replace(
+            "^GRUB_CMDLINE_LINUX_DEFAULT",
+            original,
+            replaced,
+            cmdline_config_file,
+            sudo=True,
+        )
+
+        cmd_result = self._node.execute("update-grub", shell=True, sudo=True)
+        cmd_result.assert_exit_code()
 
     def _initialize_package_installation(self) -> None:
         # wait running system package process.
@@ -757,6 +776,39 @@ class Redhat(Fedora):
         # installation, it's implemented in source code installer.
         ...
 
+    def config_kenel_cmdline(self, original: str, replaced: str) -> None:
+        # After config kernel cmdline, system reboot is needed
+        if self.information.version < "8.0.0":
+            cmdline_config_file = "/etc/default/grub"
+            sed = self._node.tools[Sed]
+            sed.replace(
+                "^GRUB_CMDLINE_LINUX_DEFAULT",
+                original,
+                replaced,
+                cmdline_config_file,
+                sudo=True,
+            )
+            result = self._node.execute("ls -lt /sys/firmware/efi")
+            if result.exit_code == 0:
+                # generation 2
+                cmd_result = self._node.execute(
+                    "grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg",
+                    shell=True,
+                    sudo=True,
+                )
+            else:
+                # generation 1
+                cmd_result = self._node.execute(
+                    "grub2-mkconfig -o /boot/grub2/grub.cfg",
+                    shell=True,
+                    sudo=True,
+                )
+        else:
+            cmd_result = self._node.execute(
+                f"grubby --update-kernel=ALL --args={replaced}", shell=True, sudo=True
+            )
+        cmd_result.assert_exit_code()
+
     def _initialize_package_installation(self) -> None:
         information = self._get_information()
         # We may hit issue when run any yum command, caused by out of date
@@ -863,6 +915,24 @@ class Suse(Linux):
     @classmethod
     def name_pattern(cls) -> Pattern[str]:
         return re.compile("^SLES|SUSE|sles|sle-hpc|sle_hpc|opensuse-leap$")
+
+    def config_kenel_cmdline(self, original: str, replaced: str) -> None:
+        # After config kernel cmdline, system reboot is needed
+        cmdline_config_file = "/etc/default/grub"
+
+        sed = self._node.tools[Sed]
+        sed.replace(
+            "^GRUB_CMDLINE_LINUX_DEFAULT",
+            original,
+            replaced,
+            cmdline_config_file,
+            sudo=True,
+        )
+
+        cmd_result = self._node.execute(
+            "grub2-mkconfig -o /boot/grub2/grub.cfg", shell=True, sudo=True
+        )
+        cmd_result.assert_exit_code()
 
     def _initialize_package_installation(self) -> None:
         self.wait_running_process("zypper")
