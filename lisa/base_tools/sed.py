@@ -10,13 +10,19 @@ class Sed(Tool):
         return "sed"
 
     def replace(
-        self, searched: str, replaced: str, file: str, sudo: bool = False
+        self, searched: str, original: str, replaced: str, file: str, sudo: bool = False
     ) -> None:
         # always force run, make sure it happens every time.
         searched = searched.replace('"', '\\"')
+        original = original.replace('"', '\\"')
         replaced = replaced.replace('"', '\\"')
+        if searched:
+            sed_command = f'-i.bak "/{searched}/s/{original}/{replaced}/g" {file}'
+        else:
+            sed_command = f'-i.bak "s/{original}/{replaced}/g" {file}'
+
         result = self.run(
-            f'-i.bak "s/{searched}/{replaced}/g" {file}',
+            sed_command,
             force_run=True,
             no_error_log=True,
             no_info_log=True,
