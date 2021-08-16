@@ -100,3 +100,7 @@ class Systemctl(Tool):
     def restart_service(self, name: str) -> None:
         cmd_result = self.run(f"restart {name}", shell=True, sudo=True, force_run=True)
         cmd_result.assert_exit_code()
+
+    def enable_service(self, name: str) -> None:
+        cmd_result = self.run(f"enable {name}", shell=True, sudo=True, force_run=True)
+        cmd_result.assert_exit_code()
