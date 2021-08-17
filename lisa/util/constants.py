@@ -47,6 +47,7 @@ LIST_CASE = "case"
 # notifier
 NOTIFIER = "notifier"
 NOTIFIER_CONSOLE = "console"
+NOTIFIER_TEXT_RESULT = "text_result"
 
 # common
 NODES = "nodes"

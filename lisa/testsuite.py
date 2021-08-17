@@ -89,6 +89,15 @@ class TestResultMessage(notifier.MessageBase):
     information: Dict[str, str] = field(default_factory=dict)
     log_file: str = ""
 
+    @property
+    def is_completed(self) -> bool:
+        return self.status in [
+            TestStatus.FAILED,
+            TestStatus.PASSED,
+            TestStatus.SKIPPED,
+            TestStatus.ATTEMPTED,
+        ]
+
 
 @dataclass
 class TestResult:
