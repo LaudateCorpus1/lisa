@@ -65,6 +65,7 @@ class Process:
         command: str,
         shell: bool = False,
         sudo: bool = False,
+        super_user: bool = False,
         cwd: Optional[pathlib.PurePath] = None,
         new_envs: Optional[Dict[str, str]] = None,
         no_error_log: bool = False,
@@ -90,13 +91,18 @@ class Process:
         if shell:
             if not self._is_posix:
                 split_command = ["cmd", "/c", command]
+            elif super_user:
+                split_command = ["sudo", "su", "-c", command]
             elif sudo:
                 split_command = ["sudo", "sh", "-c", command]
             else:
                 split_command = ["sh", "-c", command]
         else:
-            if sudo and self._is_posix:
-                command = f"sudo {command}"
+            if self._is_posix:
+                if super_user:
+                    command = f"sudo su -c '{command}'"
+                elif sudo:
+                    command = f"sudo {command}"
             split_command = shlex.split(command, posix=self._is_posix)
 
         cwd_path: Optional[str] = None
