@@ -11,3 +11,7 @@ class Cat(Tool):
 
     def _check_exists(self) -> bool:
         return True
+
+    def read_from_file(self, file_path: str) -> str:
+        # Run `cat <file_path>`
+        return self.run(file_path).stdout

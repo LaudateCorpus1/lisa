@@ -18,6 +18,19 @@ class Echo(Tool):
     def _check_exists(self) -> bool:
         return True
 
+    def write_to_file(
+        self,
+        val: str,
+        file_path: str,
+        sudo: bool = False,
+        super_user: bool = False,
+    ) -> None:
+        # Run `echo <val> > <file_path>`
+        output = self.run(
+            f"{val} > {file_path}", sudo=sudo, super_user=super_user
+        ).stdout
+        assert "Permission denied" not in output
+
 
 class WindowsEcho(Echo):
     @property

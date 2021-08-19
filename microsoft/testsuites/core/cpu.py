@@ -7,8 +7,16 @@ from lisa import Logger, testsuite
 from lisa.base_tools.cat import Cat
 from lisa.base_tools.uname import Uname
 from lisa.node import Node
+from lisa.tools.echo import Echo
 from lisa.tools.lscpu import Lscpu
+from lisa.tools.lsvmbus import Lsvmbus
+from lisa.tools.test import Test
 from lisa.util import SkippedException
+
+
+class CPUState:
+    OFFLINE: str = "0"
+    ONLINE: str = "1"
 
 
 @testsuite.TestSuiteMetadata(
@@ -19,6 +27,47 @@ from lisa.util import SkippedException
     """,
 )
 class CPU(testsuite.TestSuite):
+    @testsuite.TestCaseMetadata(
+        description="""
+            This test will check that CPU assigned to lsvmbus
+            channels cannot be put offline.
+            Steps :
+            1. Get the list of lsvmbus channel cpu mappings using
+            command `lsvmbus -vv`.
+            2. Create a set of cpu's assigned to lsvmbus channels.
+            3. Try to put cpu offline by running
+            `echo 0 > /sys/devices/system/cpu/cpu/<cpu_id>/online`.
+            Note : We skip cpu 0 as it handles system interrupts.
+            4. Ensure that cpu is still online by checking state '1' in
+            `/sys/devices/system/cpu/cpu/<target_cpu>/online`.
+            """,
+        priority=1,
+    )
+    def cpu_verify_online(self, node: Node, log: Logger) -> None:
+        cpu_count = node.tools[Lscpu].get_core_count()
+        log.debug(f"{cpu_count} CPU cores detected...")
+        channels = node.tools[Lsvmbus].get_device_channels_from_lsvmbus()
+        mapped_cpu = set()
+        for channel in channels:
+            for channel_vp_map in channel.channel_vp_map:
+                target_cpu = channel_vp_map.target_cpu
+                if target_cpu != "0":
+                    mapped_cpu.add(target_cpu)
+
+        for target_cpu in mapped_cpu:
+            log.debug(f"Checking CPU {target_cpu} on /sys/device/....")
+            file_path = f"/sys/devices/system/cpu/cpu{target_cpu}/online"
+            file_exists = node.tools[Test].file_exists(file_path)
+            if file_exists:
+                node.tools[Echo].write_to_file(
+                    CPUState.OFFLINE, file_path, super_user=True
+                )
+                result = node.tools[Cat].read_from_file(file_path)
+                assert_that(
+                    result,
+                    f"CPU {target_cpu} can't be offline...",
+                ).is_equal_to(CPUState.ONLINE)
+
     @testsuite.TestCaseMetadata(
         description="""
         This test case will check that L3 cache is correctly mapped
